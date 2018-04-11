@@ -1,7 +1,7 @@
 # RNA-Seq Pipeline
 
 The overall pipieline is the following:
-![Pipeline](pipeline.png|alt=octocat)
+![Pipeline](pipeline.png)
 
 We start with the RNA sequence read files in .bam format format. We use HTSeq to count gene expressions for each sample. We then compile the results for all samples. If your samples come from multiple populations, you might want to analyse each of the population separately for EQTL. We use DESeq2 to variance stabilize each of the populations. We then normalize the variance stabilized counts to zero mean and unit variance. We then run Surrogate Variable Analysis to find hiiden covariates that need to be corrected for. Finally we run EQTL for each population with their corresponding genotypes, normalized-variance stabilized gene counts, SVs and other known covaiates to be corrected for.
 
