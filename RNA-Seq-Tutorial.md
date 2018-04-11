@@ -1,15 +1,18 @@
-
+# RNA-Seq Pipeline
 
 The overall pipieline is the following:
-< image >
+![Pipeline](pipeline.png|alt=octocat)
+
+We start with the RNA sequence read files in .bam format format. We use HTSeq to count gene expressions for each sample. We then compile the results for all samples. If your samples come from multiple populations, you might want to analyse each of the population separately for EQTL. We use DESeq2 to variance stabilize each of the populations. We then normalize the variance stabilized counts to zero mean and unit variance. We then run Surrogate Variable Analysis to find hiiden covariates that need to be corrected for. Finally we run EQTL for each population with their corresponding genotypes, normalized-variance stabilized gene counts, SVs and other known covaiates to be corrected for.
+
 Each of the steps are explained in detail below.
+
 # HTSeq
 
 HTSeq takes the raw read files (.bam files) and the .gtf file and gives the expression of each gene in a sample.
 
+Check out http://htseq.readthedocs.io/en/master/count.html and set the -s, -m, -i,-t and -r fields correctly. 
 
-Stranded vs un-stranded
-Other options
 #### Scripts for running HTSeq
 
 ##### To run HTSeq for a single sample: 
@@ -129,7 +132,6 @@ print "List of Ids with empty input files: ", empty_file_list
     sed 's/^chr//' A.gtf > B.gtf
     ```
 
-# PCA
 
 # Variance Stabilization with DESeq2
 Remove genes with no expression (zeros in all individuals) before running variance stabilization.
@@ -201,10 +203,7 @@ If you are doing SVA for each population separately:
 3. This method also determines the number of SVs by itself. It cannot give arbitary number of SVs
 
 
-1) 
-2) Get library size corrected count matrix using DESeq2 (see above). 
-3) Decide the threshold at which you are going to call a gene 'expressed', e.g. a gene is expressed if it has an average expression >5 counts, and zero counts in no more than 20% of your individuals (to avoid tails). This is an ad-hoc step and it depends on your sample size. I can help you decide what threshold to use. 
-4) Create new count matrix, only with expressed genes (according to your definition in (3) and compute variance stabilized matrix (see above).
+
 
 ```R
 #refer: http://bioconductor.org/packages/release/bioc/vignettes/sva/inst/doc/sva.pdf
@@ -272,6 +271,7 @@ RES=residuals(lm(res ~ SVs))
 ```
 
 # EQTL Analysis:
+EQTL is generally done for each population separately. Run variance stabilization, SVA for each of the population separately and then do EQTL on each of them.
 
 **Input**: Normalized DESeq2 output ( normalized variance stabilized gene counts matrix),  SVs from SVA to be corrected for,  genotype information (vcf files)
 
@@ -362,7 +362,7 @@ We will now see how to generate each of them in detail.
 - The ID column should have unique Ids. If not, do the following
 -- To unzip .gz to a new location: ``` gunzip < file.vcf.gz > /new_location/file.vcf ```
 -- To rename ID column and make it unique: ```bcftools annotate --set-id +'%CHROM\_%POS\_%REF\_%ALT' myfilename.vcf > new.vcf```
--- Compress and re-index: ``` bgzip new.vcf && tabix -p bed new.vcf.gz```
+-- Compress and re-index: ``` bgzip new.vcf && tabix -p vcf new.vcf.gz```
 -- Scripts that do the above: Run add_unique_ids.py after setting the global variables accordingly
     add_unique_ids.sh
     ```sh
@@ -408,6 +408,18 @@ We will now see how to generate each of them in detail.
             os.system(cmd)
     ```
     It takes about 2-4 hrs per chromosome file
+    
+- At times, we might have to liftover genotypes files from different reference genome versions. Here we show an example of lifting over from hg19 to hg38. We will be using CrossMap (http://crossmap.sourceforge.net/ ) for this purpose. It can liftover many file formats including .vcf, .gtf, .bed, etc.
+-- For lifting over .vcf files, you need input_chain_file in .chain or .chain.gz format and "ref_genome_file" (genome sequence file of 'target assembly') in FASTA foramt.
+-- download the appropriate .chain and .fa files from http://hgdownload.cse.ucsc.edu/goldenPath/hg38/liftOver/ and http://hgdownload.cse.ucsc.edu/goldenPath/hg38/bigZips/ . You can find them from http://hgdownload.cse.ucsc.edu/downloads.html#liftover 
+-- Command to run: ``` CrossMap.py vcf hg19ToHg38.over.chain.gz ../../genotypes/original_vcf/22.minAC1.no_mask.with_related.vcf.gz hg38.fa ../../genotypes/22.minAC1.no_mask.with_related.hg38.vcf > non_mkk.chr22.liftover.log 2>&1 ```
+-- You might have to sort the vcf file before you run sequence number renaming, zipping and indexing. ``` cat X_PAR1.minAC1.no_mask.with_related.id_filled.hg38.vcf | vcf-sort > X_PAR1.minAC1.no_mask.with_related.id_filled.hg38.sorted.vcf ``` 
+
+
+- or use picard (https://broadinstitute.github.io/picard/command-line-overview.html#LiftoverVcf ). You might want to create a sequence dictionary of the fasta file before calling liftover (https://broadinstitute.github.io/picard/command-line-overview.html#CreateSequenceDictionary )
+-- ``` java -jar ../../../tools/picard.jar CreateSequenceDictionary R=hg38.fa O=hg38.fa.dict ```
+-- ``` java -jar /srv/scratch/mohanas/tools/picard.jar LiftoverVcf I=/srv/scratch/mohanas/africa/genotypes/mkk_vcf/chr21.vcf.gz O=chr21.hg38.vcf CHAIN=/srv/scratch/mohanas/africa/rna/ref/hg19ToHg38.over.chain.gz REJECT=chr21.hg38.rejected_variants.vcf R=hg38.fa ```
+
 - Merge genotypes files from multiple sources:
 
 #### Generating Covariates file:
@@ -426,7 +438,102 @@ sv_df.T.to_csv("covariates_"+str(NUM_SVs)+".txt", sep='\t', index_label="id")
 ```
 Now zip the file: ``` bgzip covariates_100.txt ```
 
-#### samples list file
+Note: You might also want to add known covariates like RIN, Gender, Pool Number for correction.
+
+### To Run
+```
+/srv/persistent/bliu2/tools/fastqtl/bin/fastQTL --vcf /srv/scratch/mohanas/africa/genotypes/21.minAC1.no_mask.with_related.id_filled.vcf.gz --bed /srv/scratch/mohanas/africa/rna/phenotypes/YRI_phenotypes.bed.gz --out EQTL-Results/21.minAC1.no_mask.with_related.id_filled.YRI_phenotypes.YRI_covariates_7 --cov /srv/scratch/mohanas/africa/rna/covariates/YRI_covariates_7.txt.gz --threshold 0.05 --region 21 --exclude-samples /srv/scratch/mohanas/africa/rna/exclude_samples/YRI.exc
+```
+
+#### Note:
+- VCF file - make sure the sample names in the vcf file match the sample names in phenotypes file.
+- Make sure the chromosomes are named similarly in the phenotypes and the vcf file. (Either both use 1,2,3,.. Or Chr1, Chr2, ….)
+- Make sure all the Genotype and Phenotype files have the corresponding index files
+    To create index files:
+    ```sh
+    bgzip phenotypes.bed && tabix -p bed phenotypes.bed.gz
+    bgzip genotype.vcf && tabix -p vcf genotype.vcf.gz
+    ```
+- FastQTL expects uniques values in each row for the ID column of genotypes file. (Sometimes it is all “.” in vcf files. Change it to say “Snap_<chr #>_<line #>”). You might have to unzip, change this column, zip and index all the vcf files again
+- Sometimes, you might want to shrink the .vcf file by filtering only the samples needed in your analysis. Use the following sample command where ```sample_names.txt``` contains list of sample IDs, one per line. You have to zip and index after this step.
+    ```
+    vcftools --gzvcf /srv/gsfs0/projects/montgomery/mohanas/africa/genotypes/21.minAC1.no_mask.with_related.id_filled.vcf.gz --out /srv/gsfs0/projects/montgomery/mohanas/africa/genotypes/21.minAC1.no_mask.with_related.id_filled.599_samples --keep /srv/gsfs0/projects/montgomery/mohanas/africa/rna/sample_names.txt --recode
+    ```
+    
+
+
+# Differential Gene Expression with DESeq2
+As a separate analyse we do deseq2 on all pairs of population
+1) You should filter genes to ignore psuedo-genes and keep only the required ones. (you can get gene types from the .gtf file)
+2) Decide the threshold at which you are going to call a gene 'expressed', e.g. a gene is expressed if it has an average expression >5 counts, and zero counts in no more than 20% of your individuals (to avoid tails). This is an ad-hoc step and it depends on your sample size. 
+3) Create new count matrix, only with expressed genes.
+
+Sample code for Differential Expression Analysis:
+```R
+count_data <- read.csv("~/gene_expression/data/GeneReadsMatrixStrandedRenamed.csv", header=TRUE, row.names = 1 )
+count_data = as.matrix(count_data)
+count_data <- count_data[ ! rownames(count_data) %in% c("__alignment_not_unique", "__ambiguous", "__no_feature", "__not_aligned", "__too_low_aQual"),]
+count_data = count_data[ rowSums(count_data)!=0, ] 
+head(count_data)
+
+coldata <- read.csv("~/gene_expression/data/AGR_600RNA_sample_metadata_CP_300317_599Samples.csv", header=TRUE, row.names=2)
+
+
+all(rownames(coldata) %in% colnames(count_data)) #True
+all(rownames(coldata) == colnames(count_data)) # FALSE
+count_data <- count_data[, rownames(coldata)]
+all(rownames(coldata) == colnames(count_data)) # TRUE
+
+library(DESeq2)
+
+dds <- DESeqDataSetFromMatrix(countData = count_data, colData = coldata, design = ~Gender + RIN + PoolNumber + Population) # by default the last variable in design is the condition
+dds$Population <- relevel(dds$Population, ref = "MKK") # reference level is MKK
+dds <- DESeq(dds)
+
+resultsNames(dds)
+
+res <- results(dds, contrast=c("Population","MSL","MKK"), alpha = 0.05, pAdjustMethod = "BH")
+resLFC <- lfcShrink(dds, coef="Population_MSL_vs_LWK")
+plotMA(res, ylim=c(-2,2))
+plotMA(resLFC, ylim=c(-2,2))
+
+# find # genes with adjusted p-value less than a value
+summary(res)
+sum(res05$padj < 0.05, na.rm=TRUE)
+
+
+# refer  https://shiring.github.io/rna-seq/deseq2/teaching/2016/09/29/DESeq2-course
+
+summary(res)
+mcols(res)$description
+
+# order results table by the smallest adjusted p value:
+res <- res[order(res$padj),]
+
+library("dplyr")
+library(ggplot2)
+library(ggrepel)
+
+results = as.data.frame(mutate(as.data.frame(res), sig=ifelse(res$padj<0.05, "FDR<0.05", "Not Sig")), row.names=rownames(res))
+head(results)
+DEgenes_DESeq <- results[which(abs(results$log2FoldChange) > log2(1.5) & results$padj < 0.05),]
+p = ggplot2::ggplot(results, ggplot2::aes(log2FoldChange, -log10(pvalue))) +
+  ggplot2::geom_point(ggplot2::aes(col = sig)) +
+  ggplot2::scale_color_manual(values = c("red", "black")) +
+  ggplot2::ggtitle("Volcano Plot of DESeq2 analysis")
+p + ggrepel::geom_text_repel(data=results[1:10, ], ggplot2::aes(label=rownames(results[1:10, ])))
+
+# plot counts
+par(mfrow=c(1,3))
+for (i in 1:3){
+  gene <- rownames(res)[i]
+  main = gene
+  DESeq2::plotCounts(dds, gene=gene, intgroup="Population", main = main)
+}
+
+```
+
+# Extras
 
 Commands to Run:
 
@@ -510,91 +617,6 @@ for chrom in CHRS:
 					print "Time elapsed (in secs) = ", end-start
 
 
-
-```
-#### Results and Analysis:
-
-
-### Note:
-- VCF file - make sure the sample names in the vcf file match the sample names in phenotypes file.
-- Make sure the chromosomes are named similarly in the phenotypes and the vcf file. (Either both use 1,2,3,.. Or Chr1, Chr2, ….)
-- Make sure all the Genotype and Phenotype files have the corresponding index files
-    To create index files:
-    ```sh
-    bgzip phenotypes.bed && tabix -p bed phenotypes.bed.gz
-    bgzip genotype.vcf && tabix -p vcf genotype.vcf.gz
-    ```
-- FastQTL expects uniques values in each row for the ID column of genotypes file. (Sometimes it is all “.” in vcf files. Change it to say “Snap_<chr #>_<line #>”). You might have to unzip, change this column, zip and index all the vcf files again
-
-
-# Differential Gene Expression with DESeq2
-As a separate analyse we do deseq2 on all pairs of population
-
-```R
-count_data <- read.csv("~/gene_expression/data/GeneReadsMatrixStrandedRenamed.csv", header=TRUE, row.names = 1 )
-count_data = as.matrix(count_data)
-
-count_data <- count_data[ ! rownames(count_data) %in% c("__alignment_not_unique", "__ambiguous", "__no_feature", "__not_aligned", "__too_low_aQual"),]
-count_data = count_data[ rowSums(count_data)!=0, ] 
-
-head(count_data)
-
-coldata <- read.csv("~/gene_expression/data/AGR_600RNA_sample_metadata_CP_300317_599Samples.csv", header=TRUE, row.names=2)
-
-
-all(rownames(coldata) %in% colnames(count_data)) #True
-
-all(rownames(coldata) == colnames(count_data)) # FALSE
-
-count_data <- count_data[, rownames(coldata)]
-all(rownames(coldata) == colnames(count_data)) # TRUE
-
-dds <- DESeqDataSetFromMatrix(countData = count_data, colData = coldata, design = ~Population)
-dds <- DESeq(dds)
-res <- results(dds, contrast=c("Population","MSL","LWK"), alpha = 0.05, pAdjustMethod = "BH")
-
-resultsNames(dds)
-resLFC <- lfcShrink(dds, coef="Population_MSL_vs_LWK")
-
-plotMA(res, ylim=c(-2,2))
-plotMA(resLFC, ylim=c(-2,2))
-plotCounts(dds, gene=which.min(res$padj), intgroup="condition") # plot gene with lowest p-value
-
-# find # genes with adjusted p-value less than a value
-summary(res)
-sum(res05$padj < 0.05, na.rm=TRUE)
-
-
-# refer  https://shiring.github.io/rna-seq/deseq2/teaching/2016/09/29/DESeq2-course
-res <- results(data_DESeq, contrast=list("treatmentActLPS", "treatmentCtrl"), cooksCutoff = 0.99, independentFiltering = TRUE, alpha = 0.05, pAdjustMethod = "BH")
-summary(res)
-mcols(res)$description
-# order results table by the smallest adjusted p value:
-res <- res[order(res$padj),]
-
-library("dplyr")
-results = as.data.frame(mutate(as.data.frame(res), sig=ifelse(res$padj<0.05, "FDR<0.05", "Not Sig")), row.names=rownames(res))
-head(results)
-
-library(ggplot2)
-library(ggrepel)
-DEgenes_DESeq <- results[which(abs(results$log2FoldChange) > log2(1.5) & results$padj < 0.05),]
-
-p = ggplot2::ggplot(results, ggplot2::aes(log2FoldChange, -log10(pvalue))) +
-  ggplot2::geom_point(ggplot2::aes(col = sig)) +
-  ggplot2::scale_color_manual(values = c("red", "black")) +
-  ggplot2::ggtitle("Volcano Plot of DESeq2 analysis")
-
-p + ggrepel::geom_text_repel(data=results[1:10, ], ggplot2::aes(label=rownames(results[1:10, ])))
-
-# plot counts
-par(mfrow=c(1,3))
-
-for (i in 1:3){
-  gene <- rownames(res)[i]
-  main = gene
-  DESeq2::plotCounts(dds, gene=gene, intgroup="Population", main = main)
-}
 
 ```
 
