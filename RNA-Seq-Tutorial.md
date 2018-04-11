@@ -288,9 +288,9 @@ We will now see how to generate each of them in detail.
 **Input**: Normalized output of DESeq2 variance stabilized gene counts matrix, GTF file 
 **Output**: Tab delimited .bed file with the following format
 ```
-#Chr    start   end	ID	Sample_ID1  Sample_ID2  Sample_ID3  Sample_ID4
-1	685395	685396	ENSG456 -1.13	1.18	-0.03	0.11
-1	700304	700305	ENSG789 -1.18	1.32	-0.36	1.26
+#Chr    start   end ID  Sample_ID1  Sample_ID2  Sample_ID3  Sample_ID4
+1   685395  685396  ENSG456 -1.13   1.18    -0.03   0.11
+1   700304  700305  ENSG789 -1.18   1.32    -0.36   1.26
 ```
 
 - Merge GTF file and your gene counts.
@@ -408,19 +408,22 @@ We will now see how to generate each of them in detail.
             os.system(cmd)
     ```
     It takes about 2-4 hrs per chromosome file
-    
+
+**Lift Over .vcf  Files**   
 - At times, we might have to liftover genotypes files from different reference genome versions. Here we show an example of lifting over from hg19 to hg38. We will be using CrossMap (http://crossmap.sourceforge.net/ ) for this purpose. It can liftover many file formats including .vcf, .gtf, .bed, etc.
--- For lifting over .vcf files, you need input_chain_file in .chain or .chain.gz format and "ref_genome_file" (genome sequence file of 'target assembly') in FASTA foramt.
--- download the appropriate .chain and .fa files from http://hgdownload.cse.ucsc.edu/goldenPath/hg38/liftOver/ and http://hgdownload.cse.ucsc.edu/goldenPath/hg38/bigZips/ . You can find them from http://hgdownload.cse.ucsc.edu/downloads.html#liftover 
--- Command to run: ``` CrossMap.py vcf hg19ToHg38.over.chain.gz ../../genotypes/original_vcf/22.minAC1.no_mask.with_related.vcf.gz hg38.fa ../../genotypes/22.minAC1.no_mask.with_related.hg38.vcf > non_mkk.chr22.liftover.log 2>&1 ```
--- You might have to sort the vcf file before you run sequence number renaming, zipping and indexing. ``` cat X_PAR1.minAC1.no_mask.with_related.id_filled.hg38.vcf | vcf-sort > X_PAR1.minAC1.no_mask.with_related.id_filled.hg38.sorted.vcf ``` 
+- For lifting over .vcf files, you need input_chain_file in .chain or .chain.gz format and "ref_genome_file" (genome sequence file of 'target assembly') in FASTA foramt.
+- download the appropriate .chain and .fa files from http://hgdownload.cse.ucsc.edu/goldenPath/hg38/liftOver/ and http://hgdownload.cse.ucsc.edu/goldenPath/hg38/bigZips/ . You can find them from http://hgdownload.cse.ucsc.edu/downloads.html#liftover 
+- Command to run: 
+    ``` CrossMap.py vcf hg19ToHg38.over.chain.gz ../../genotypes/original_vcf/22.minAC1.no_mask.with_related.vcf.gz hg38.fa ../../genotypes/22.minAC1.no_mask.with_related.hg38.vcf > non_mkk.chr22.liftover.log 2>&1 ```
+-- You might have to sort the vcf file before you run sequence number renaming, zipping and indexing. 
+    ``` cat X_PAR1.minAC1.no_mask.with_related.id_filled.hg38.vcf | vcf-sort > X_PAR1.minAC1.no_mask.with_related.id_filled.hg38.sorted.vcf ``` 
 
 
-- or use picard (https://broadinstitute.github.io/picard/command-line-overview.html#LiftoverVcf ). You might want to create a sequence dictionary of the fasta file before calling liftover (https://broadinstitute.github.io/picard/command-line-overview.html#CreateSequenceDictionary )
--- ``` java -jar ../../../tools/picard.jar CreateSequenceDictionary R=hg38.fa O=hg38.fa.dict ```
--- ``` java -jar /srv/scratch/mohanas/tools/picard.jar LiftoverVcf I=/srv/scratch/mohanas/africa/genotypes/mkk_vcf/chr21.vcf.gz O=chr21.hg38.vcf CHAIN=/srv/scratch/mohanas/africa/rna/ref/hg19ToHg38.over.chain.gz REJECT=chr21.hg38.rejected_variants.vcf R=hg38.fa ```
+- You can also use picard (https://broadinstitute.github.io/picard/command-line-overview.html#LiftoverVcf ). You might want to create a sequence dictionary of the fasta file before calling liftover (https://broadinstitute.github.io/picard/command-line-overview.html#CreateSequenceDictionary )
+``` java -jar ../../../tools/picard.jar CreateSequenceDictionary R=hg38.fa O=hg38.fa.dict ```
+``` java -jar /srv/scratch/mohanas/tools/picard.jar LiftoverVcf I=/srv/scratch/mohanas/africa/genotypes/mkk_vcf/chr21.vcf.gz O=chr21.hg38.vcf CHAIN=/srv/scratch/mohanas/africa/rna/ref/hg19ToHg38.over.chain.gz REJECT=chr21.hg38.rejected_variants.vcf R=hg38.fa ```
 
-- Merge genotypes files from multiple sources:
+
 
 #### Generating Covariates file:
 
@@ -596,25 +599,25 @@ NUM_CHUNKS_TOTAL = "500"
 start = time.time()
 ct = 0
 for chrom in CHRS:
-	for pop in POPULATIONS:
-		for cov_file in COV_FILES:
-			cmd1 = "/srv/persistent/bliu2/tools/fastqtl/bin/fastQTL --vcf " + GENO_DIR_PATH + chrom + GENO_FILE_SUFFIX + \
-				   " --bed " + PHENO_DIR_PATH + pop + PHENO_FILE_SUFFIX + \
-				   " --out " + RESULTS_DIR + chrom + GENO_FILE_SUFFIX[:-6] + pop + PHENO_FILE_SUFFIX[:-6] + cov_file[:-7] + \
-				   " --cov " + COV_DIR_PATH + cov_file + \
-				   " --threshold 0.05 --commands " + NUM_CHUNKS_TOTAL + " commands." + NUM_CHUNKS_TOTAL + ".txt" 
+    for pop in POPULATIONS:
+        for cov_file in COV_FILES:
+            cmd1 = "/srv/persistent/bliu2/tools/fastqtl/bin/fastQTL --vcf " + GENO_DIR_PATH + chrom + GENO_FILE_SUFFIX + \
+                   " --bed " + PHENO_DIR_PATH + pop + PHENO_FILE_SUFFIX + \
+                   " --out " + RESULTS_DIR + chrom + GENO_FILE_SUFFIX[:-6] + pop + PHENO_FILE_SUFFIX[:-6] + cov_file[:-7] + \
+                   " --cov " + COV_DIR_PATH + cov_file + \
+                   " --threshold 0.05 --commands " + NUM_CHUNKS_TOTAL + " commands." + NUM_CHUNKS_TOTAL + ".txt" 
 
-			print cmd1
-			os.system(cmd1)
+            print cmd1
+            os.system(cmd1)
 
-			fil = open("commands." + NUM_CHUNKS_TOTAL + ".txt")
-			for line in fil:
-				if line.strip().split()[-1].split(":")[0] == chrom:
-					ct += 1
-					print str(ct) + ") " + line.strip()
-					os.system(line.strip())
-					end = time.time()
-					print "Time elapsed (in secs) = ", end-start
+            fil = open("commands." + NUM_CHUNKS_TOTAL + ".txt")
+            for line in fil:
+                if line.strip().split()[-1].split(":")[0] == chrom:
+                    ct += 1
+                    print str(ct) + ") " + line.strip()
+                    os.system(line.strip())
+                    end = time.time()
+                    print "Time elapsed (in secs) = ", end-start
 
 
 
